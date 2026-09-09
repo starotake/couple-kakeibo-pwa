@@ -1,4 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, '../public');
+
+// 洗練された夫婦家計簿のSVGアイコン（クリーンなダークネイビー背景＋ピンク＆ブルーのハートハートモチーフ）
+const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0F172A" />
@@ -34,4 +43,9 @@
     <circle cx="256" cy="240" r="42" fill="#FFFFFF" />
     <path d="M256 215 L263 233 L281 240 L263 247 L256 265 L249 247 L231 240 L249 233 Z" fill="#0F172A" />
   </g>
-</svg>
+</svg>`;
+
+fs.writeFileSync(path.join(publicDir, 'favicon.svg'), svgContent);
+fs.writeFileSync(path.join(publicDir, 'icon.svg'), svgContent);
+
+console.log('Pretty SVG Icon generated successfully.');
