@@ -33,7 +33,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({ expenses, currentY
         <span className="text-xs text-slate-400 font-medium">内訳割合</span>
       </div>
 
-      {/* 円グラフ */}
+      {/* 円グラフ (12時方向スタート・時計回り設定) */}
       <div className="h-44 w-full relative">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -41,6 +41,8 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({ expenses, currentY
               data={data}
               cx="50%"
               cy="50%"
+              startAngle={90}
+              endAngle={-270}
               innerRadius={48}
               outerRadius={72}
               paddingAngle={4}
