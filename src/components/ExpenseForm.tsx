@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Expense, Category, Payer } from '../types/expense';
 import { getTodayString } from '../utils/formatters';
-import { Plus, Check, Calendar, Tag, CreditCard, PieChart, FileText, X } from 'lucide-react';
+import { parseReceiptImage } from '../utils/ocr';
+import { Plus, Check, Calendar, Tag, CreditCard, PieChart, FileText, X, Camera, Loader2, Sparkles } from 'lucide-react';
 
 interface ExpenseFormProps {
   initialExpense?: Expense | null;
@@ -24,6 +25,11 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   const [payer, setPayer] = useState<Payer>('husband');
   const [shintaRatio, setShintaRatio] = useState<number>(50);
   const [memo, setMemo] = useState<string>('');
+
+  // OCRスキャン状態
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [ocrStatus, setOcrStatus] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialExpense) {
@@ -70,13 +76,54 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
     setShintaRatio(h);
   };
 
+  // レシート画像のOCR解析処理
+  const handleReceiptScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanning(true);
+    setOcrStatus('レシートを解析中...');
+
+    try {
+      const result = await parseReceiptImage(file);
+
+      let successMsg: string[] = [];
+      if (result.amount) {
+        setAmount(String(result.amount));
+        successMsg.push(`金額 ¥${result.amount.toLocaleString()}`);
+      }
+      if (result.date) {
+        setDate(result.date);
+        successMsg.push(`日付 ${result.date}`);
+      }
+      if (result.memo && !memo) {
+        setMemo(result.memo);
+        successMsg.push(`店舗名「${result.memo}」`);
+      }
+
+      if (successMsg.length > 0) {
+        setOcrStatus(`✨ ${successMsg.join('・')} を自動入力しました！`);
+      } else {
+        setOcrStatus('⚠️ 明確な金額を検出できませんでした。手入力してください。');
+      }
+    } catch (err) {
+      console.error('OCR Error:', err);
+      setOcrStatus('⚠️ 解析に失敗しました。画像を確認してください。');
+    } finally {
+      setIsScanning(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className={`bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-5 ${isBottomSheet ? 'animate-slide-up max-h-[90vh] overflow-y-auto' : ''}`}>
       {isBottomSheet && (
         <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto -mt-2 mb-1" />
       )}
 
-      {/* ヘッダー */}
+      {/* ヘッダー ＆ レシートカメラ読み込みボタン */}
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div>
           <h2 className="font-black text-navy-900 text-lg tracking-tight">
@@ -84,16 +131,58 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
           </h2>
           <p className="text-xs text-slate-400 font-medium">金額と支払い情報を入力してください</p>
         </div>
-        {onCancel && (
+
+        <div className="flex items-center gap-2">
+          {/* レシートカメラ撮影/読み込みボタン */}
           <button
             type="button"
-            onClick={onCancel}
-            className="p-2 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full active:scale-90 transition"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isScanning}
+            className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-bold shadow-sm flex items-center gap-1.5 active:scale-95 transition"
           >
-            <X className="w-5 h-5" />
+            {isScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+            <span>レシート読込</span>
           </button>
-        )}
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleReceiptScan}
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+          />
+
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="p-2 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full active:scale-90 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* OCR結果・スキャン中のトースト通知 */}
+      {ocrStatus && (
+        <div className={`p-3 rounded-2xl text-xs font-bold flex items-center justify-between animate-fade-in ${
+          ocrStatus.includes('✨')
+            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+            : ocrStatus.includes('⚠️')
+            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+            : 'bg-blue-50 text-blue-800 border border-blue-200'
+        }`}>
+          <span className="flex items-center gap-1.5">
+            {isScanning ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Sparkles className="w-4 h-4 text-emerald-600" />}
+            {ocrStatus}
+          </span>
+          <button type="button" onClick={() => setOcrStatus('')} className="text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* 金額入力 */}
@@ -246,7 +335,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
             type="text"
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder="オムツ代、習い事代、洋服など"
+            placeholder="スーパーの買い物、カフェ代など"
             className="w-full px-4 py-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-sm text-slate-800 font-medium focus:outline-none focus:bg-white focus:border-blue-500 transition"
           />
         </div>
