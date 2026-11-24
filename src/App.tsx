@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Expense } from './types/expense';
-import { loadExpenses, saveExpenses, getGasApiUrl } from './utils/storage';
+import { Expense, SettlementMap } from './types/expense';
+import {
+  loadExpenses,
+  saveExpenses,
+  loadSettlements,
+  saveSettlements,
+  getGasApiUrl,
+} from './utils/storage';
 import { GasApiService } from './services/api';
-import { calculateMonthlySummary } from './utils/calculation';
+import { calculateMonthlySummary, calculateUnsettledTotal } from './utils/calculation';
 import { getTodayString } from './utils/formatters';
 import { Header } from './components/Header';
 import { BottomNav, TabType } from './components/BottomNav';
@@ -10,11 +16,13 @@ import { SummaryCards } from './components/SummaryCards';
 import { CategoryChart } from './components/CategoryChart';
 import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
+import { SettlementOverview } from './components/SettlementOverview';
 import { SettingsModal } from './components/SettingsModal';
 import { RefreshCw } from 'lucide-react';
 
 export function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [settlements, setSettlements] = useState<SettlementMap>({});
   const [currentYearMonth, setCurrentYearMonth] = useState<string>(
     getTodayString().substring(0, 7)
   );
@@ -24,17 +32,22 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  // クラウドデータ同期
+  // クラウドデータ同期（支出＋精算フラグ）
   const refreshCloudData = async () => {
     const url = getGasApiUrl();
     if (!url) return;
 
     setIsSyncing(true);
     try {
-      const cloudExpenses = await GasApiService.fetchExpenses(url);
-      if (Array.isArray(cloudExpenses) && cloudExpenses.length > 0) {
-        setExpenses(cloudExpenses);
-        saveExpenses(cloudExpenses);
+      const cloudData = await GasApiService.fetchCloudData(url);
+      if (Array.isArray(cloudData.expenses) && cloudData.expenses.length > 0) {
+        setExpenses(cloudData.expenses);
+        saveExpenses(cloudData.expenses);
+      }
+      // 精算管理シート対応のGASから返ってきた場合のみ上書き同期
+      if (cloudData.settlements !== undefined) {
+        setSettlements(cloudData.settlements);
+        saveSettlements(cloudData.settlements);
       }
     } catch (err) {
       console.warn('Cloud sync error, fallback to local storage:', err);
@@ -47,6 +60,7 @@ export function App() {
   useEffect(() => {
     const localData = loadExpenses();
     setExpenses(localData);
+    setSettlements(loadSettlements());
 
     // GAS URLが設定されていれば同期
     const url = getGasApiUrl();
@@ -58,6 +72,11 @@ export function App() {
   const updateExpenses = (newExpenses: Expense[]) => {
     setExpenses(newExpenses);
     saveExpenses(newExpenses);
+  };
+
+  const updateSettlements = (newSettlements: SettlementMap) => {
+    setSettlements(newSettlements);
+    saveSettlements(newSettlements);
   };
 
   // 支出追加・更新
@@ -98,7 +117,7 @@ export function App() {
     const url = getGasApiUrl();
     if (url) {
       setIsSyncing(true);
-      await GasApiService.syncAllExpenses(url, updatedExpenses);
+      await GasApiService.syncAllExpenses(url, updatedExpenses, settlements);
       setIsSyncing(false);
     }
   };
@@ -116,6 +135,54 @@ export function App() {
     }
   };
 
+  // 指定した年月の精算済みフラグを切り替え
+  const handleToggleSettlement = async (yearMonth: string) => {
+    const current = settlements[yearMonth];
+    const nextIsSettled = !current?.isSettled;
+    const updatedSettlements: SettlementMap = {
+      ...settlements,
+      [yearMonth]: {
+        yearMonth,
+        isSettled: nextIsSettled,
+        settledAt: nextIsSettled ? getTodayString() : undefined,
+      },
+    };
+
+    updateSettlements(updatedSettlements);
+
+    const url = getGasApiUrl();
+    if (url) {
+      setIsSyncing(true);
+      await GasApiService.syncSettlements(url, updatedSettlements);
+      setIsSyncing(false);
+    }
+  };
+
+  // 未精算の月をすべてまとめて精算済みにする
+  const handleSettleAllUnsettled = async () => {
+    const today = getTodayString();
+    const updatedSettlements: SettlementMap = { ...settlements };
+
+    for (const item of unsettledSummary.monthlyItems) {
+      if (!item.isSettled && item.summary.settlementAmount > 0) {
+        updatedSettlements[item.yearMonth] = {
+          yearMonth: item.yearMonth,
+          isSettled: true,
+          settledAt: today,
+        };
+      }
+    }
+
+    updateSettlements(updatedSettlements);
+
+    const url = getGasApiUrl();
+    if (url) {
+      setIsSyncing(true);
+      await GasApiService.syncSettlements(url, updatedSettlements);
+      setIsSyncing(false);
+    }
+  };
+
   const handleStartEdit = (expense: Expense) => {
     setEditingExpense(expense);
     setIsAddModalOpen(true);
@@ -127,6 +194,8 @@ export function App() {
   };
 
   const summary = calculateMonthlySummary(expenses, currentYearMonth);
+  const unsettledSummary = calculateUnsettledTotal(expenses, settlements);
+  const currentMonthSettlement = settlements[currentYearMonth];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 font-sans antialiased">
@@ -137,7 +206,7 @@ export function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
-      {/* 同期インジケーター（同期間中） */}
+      {/* 同期インジケーター（同期中） */}
       {isSyncing && (
         <div className="bg-blue-600 text-white text-[11px] font-bold py-1 px-3 text-center flex items-center justify-center gap-1.5 animate-fade-in shadow-xs">
           <RefreshCw className="w-3 h-3 animate-spin" />
@@ -149,16 +218,38 @@ export function App() {
       <main className="max-w-md mx-auto px-4 py-4 space-y-5">
         {activeTab === 'summary' && (
           <>
-            <SummaryCards summary={summary} />
+            <SummaryCards
+              summary={summary}
+              isCurrentMonthSettled={Boolean(currentMonthSettlement?.isSettled)}
+              currentMonthSettledAt={currentMonthSettlement?.settledAt}
+              onToggleCurrentMonthSettlement={() => handleToggleSettlement(currentYearMonth)}
+              unsettledSummary={unsettledSummary}
+              onOpenSettlementTab={() => setActiveTab('settlement')}
+            />
             <CategoryChart expenses={expenses} currentYearMonth={currentYearMonth} />
-            
+
             <button
               onClick={() => setActiveTab('list')}
               className="w-full py-4 bg-white hover:bg-slate-100 border border-slate-100 rounded-3xl text-xs font-black text-slate-700 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
-              <span>今月の支出明細を見る ({expenses.filter(e => e.date.startsWith(currentYearMonth)).length}件)</span>
+              <span>
+                この月の支出明細を見る (
+                {expenses.filter((e) => e.date.startsWith(currentYearMonth)).length}件)
+              </span>
             </button>
           </>
+        )}
+
+        {activeTab === 'settlement' && (
+          <SettlementOverview
+            unsettledSummary={unsettledSummary}
+            onToggleSettlement={handleToggleSettlement}
+            onSettleAllUnsettled={handleSettleAllUnsettled}
+            onSelectMonth={(ym) => {
+              setCurrentYearMonth(ym);
+              setActiveTab('summary');
+            }}
+          />
         )}
 
         {activeTab === 'list' && (
@@ -182,6 +273,7 @@ export function App() {
           }
         }}
         onOpenAddModal={handleOpenAddModal}
+        unsettledCount={unsettledSummary.unsettledMonthsCount}
       />
 
       {/* Bottom Sheet モーダル */}
@@ -214,7 +306,9 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         expenses={expenses}
+        settlements={settlements}
         onUpdateExpenses={updateExpenses}
+        onUpdateSettlements={updateSettlements}
         onRefreshCloudData={refreshCloudData}
       />
     </div>

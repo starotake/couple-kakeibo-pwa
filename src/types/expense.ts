@@ -33,3 +33,39 @@ export interface MonthlySummary {
   settlementPayer: 'husband' | 'wife' | 'none'; // 精算金を払う人（husband=しんた, wife=ともこ）
   settlementRecipient: 'husband' | 'wife' | 'none'; // 精算金を受け取る人
 }
+
+/**
+ * 各月の精算済みステータス
+ */
+export interface MonthlySettlementRecord {
+  yearMonth: string;   // 対象年月 (YYYY-MM)
+  isSettled: boolean;  // 精算済みフラグ
+  settledAt?: string;  // 精算済みにした日時 (YYYY-MM-DD)
+}
+
+/**
+ * 年月をキーとした精算ステータスマップ
+ */
+export type SettlementMap = Record<string, MonthlySettlementRecord>;
+
+/**
+ * 月別の精算一覧表示用データ
+ */
+export interface MonthlySettlementItem {
+  yearMonth: string;       // 対象年月 (YYYY-MM)
+  summary: MonthlySummary; // その月の集計結果
+  expenseCount: number;    // その月の支出件数
+  isSettled: boolean;      // 精算済みフラグ
+  settledAt?: string;      // 精算日 (YYYY-MM-DD)
+}
+
+/**
+ * 全期間の未精算トータル集計結果
+ */
+export interface UnsettledTotalSummary {
+  unsettledMonthsCount: number;                     // 未精算の月数（精算額 > 0 の月）
+  totalAmount: number;                              // 未精算トータル額（相殺後の絶対値）
+  settlementPayer: 'husband' | 'wife' | 'none';     // トータルで支払う人
+  settlementRecipient: 'husband' | 'wife' | 'none'; // トータルで受け取る人
+  monthlyItems: MonthlySettlementItem[];            // 月別の精算一覧（新しい年月順）
+}

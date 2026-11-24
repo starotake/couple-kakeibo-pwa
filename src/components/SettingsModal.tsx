@@ -1,14 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Expense } from '../types/expense';
-import { exportExpensesAsJSON, resetToSampleExpenses, getGasApiUrl, saveGasApiUrl } from '../utils/storage';
+import { Expense, SettlementMap } from '../types/expense';
+import {
+  exportExpensesAsJSON,
+  resetToSampleExpenses,
+  getGasApiUrl,
+  saveGasApiUrl,
+} from '../utils/storage';
 import { GasApiService } from '../services/api';
-import { Download, Upload, RefreshCw, X, Smartphone, Trash2, ShieldCheck, Database, Check, Loader2 } from 'lucide-react';
+import {
+  Download,
+  Upload,
+  RefreshCw,
+  X,
+  Smartphone,
+  Trash2,
+  ShieldCheck,
+  Database,
+  Check,
+  Loader2,
+} from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   expenses: Expense[];
+  settlements: SettlementMap;
   onUpdateExpenses: (newExpenses: Expense[]) => void;
+  onUpdateSettlements: (newSettlements: SettlementMap) => void;
   onRefreshCloudData: () => Promise<void>;
 }
 
@@ -16,7 +34,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   expenses,
+  settlements,
   onUpdateExpenses,
+  onUpdateSettlements,
   onRefreshCloudData,
 }) => {
   const [gasUrl, setGasUrl] = useState<string>('');
@@ -46,10 +66,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     setIsTesting(true);
     try {
-      const cloudData = await GasApiService.fetchExpenses(gasUrl.trim());
+      const cloudData = await GasApiService.fetchCloudData(gasUrl.trim());
+      const hasSettlementSync = cloudData.settlements !== undefined;
       setTestResult({
         success: true,
-        message: `接続成功！Googleスプレッドシートから ${cloudData.length} 件の支出を取得しました。`,
+        message: hasSettlementSync
+          ? `接続成功！支出 ${cloudData.expenses.length} 件を取得（精算フラグ同期対応済み）。`
+          : `接続成功！支出 ${cloudData.expenses.length} 件を取得しました（※精算フラグも夫婦で同期するにはGASコードを最新版に更新してください）。`,
       });
       await onRefreshCloudData();
     } catch (err) {
@@ -70,9 +93,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
 
-    if (window.confirm('現在の家計簿データをGoogleスプレッドシートに一括保存（全置き換え）しますか？')) {
+    if (
+      window.confirm(
+        '現在の家計簿データと精算フラグをGoogleスプレッドシートに一括保存（全置き換え）しますか？'
+      )
+    ) {
       setIsTesting(true);
-      const success = await GasApiService.syncAllExpenses(url, expenses);
+      const success = await GasApiService.syncAllExpenses(url, expenses, settlements);
       setIsTesting(false);
       if (success) {
         alert('Googleスプレッドシートへ全データを送信・保存しました！');
@@ -83,7 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleExport = () => {
-    exportExpensesAsJSON(expenses);
+    exportExpensesAsJSON(expenses, settlements);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,8 +122,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       try {
         const importedData = JSON.parse(event.target?.result as string);
         if (Array.isArray(importedData)) {
+          // 旧形式（支出配列のみ）のバックアップ
           onUpdateExpenses(importedData);
           alert('データの復元が成功しました！');
+          onClose();
+        } else if (
+          importedData &&
+          typeof importedData === 'object' &&
+          Array.isArray(importedData.expenses)
+        ) {
+          // 新形式（支出＋精算ステータス）のバックアップ
+          onUpdateExpenses(importedData.expenses);
+          if (importedData.settlements && typeof importedData.settlements === 'object') {
+            onUpdateSettlements(importedData.settlements);
+          }
+          alert('支出データと精算フラグの復元が成功しました！');
           onClose();
         } else {
           alert('不正なファイル形式です。');
@@ -112,6 +152,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (window.confirm('現在のデータをリセットし、サンプルデータを読み込みますか？')) {
       const samples = resetToSampleExpenses();
       onUpdateExpenses(samples);
+      onUpdateSettlements({});
       alert('サンプルデータを投入しました。');
       onClose();
     }
@@ -120,6 +161,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleClearAll = () => {
     if (window.confirm('本当にすべてのデータを消去しますか？')) {
       onUpdateExpenses([]);
+      onUpdateSettlements({});
       alert('データを削除しました。');
       onClose();
     }
@@ -261,7 +303,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="text-center pt-2 text-[11px] text-slate-400 font-medium flex items-center justify-center gap-1">
           <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-          ふたり家計簿 PWA v1.0.0
+          ふたり家計簿 PWA v1.1.0
         </div>
       </div>
     </div>

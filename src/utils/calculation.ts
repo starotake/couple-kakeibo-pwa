@@ -1,4 +1,10 @@
-import { Expense, MonthlySummary } from '../types/expense';
+import {
+  Expense,
+  MonthlySummary,
+  SettlementMap,
+  MonthlySettlementItem,
+  UnsettledTotalSummary,
+} from '../types/expense';
 
 /**
  * 対象年月の支出データを元に集計および精算額を計算します
@@ -87,4 +93,72 @@ export const calculateCategoryTotals = (
   return Object.entries(categoryMap)
     .filter(([_, value]) => value > 0)
     .map(([name, value]) => ({ name, value: Math.round(value) }));
+};
+
+/**
+ * 全期間の月別精算状況と、未精算分のトータル金額を計算します
+ */
+export const calculateUnsettledTotal = (
+  expenses: Expense[],
+  settlements: SettlementMap
+): UnsettledTotalSummary => {
+  // 支出が存在する全年月を抽出
+  const monthSet = new Set<string>();
+  for (const expense of expenses) {
+    if (expense.date && expense.date.length >= 7) {
+      monthSet.add(expense.date.substring(0, 7));
+    }
+  }
+
+  // 新しい年月順にソート
+  const sortedMonths = Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+
+  let unsettledMonthsCount = 0;
+  // 符号付き未精算トータル（正: ともこ→しんた、負: しんた→ともこ）
+  let netUnsettledAmount = 0;
+
+  const monthlyItems: MonthlySettlementItem[] = sortedMonths.map((yearMonth) => {
+    const summary = calculateMonthlySummary(expenses, yearMonth);
+    const expenseCount = expenses.filter((e) => e.date.startsWith(yearMonth)).length;
+    const record = settlements[yearMonth];
+    const isSettled = Boolean(record?.isSettled);
+
+    // 未精算かつ精算額がある月のみトータルに加算（相殺）
+    if (!isSettled && summary.settlementAmount > 0) {
+      unsettledMonthsCount += 1;
+      if (summary.settlementPayer === 'wife') {
+        netUnsettledAmount += summary.settlementAmount;
+      } else if (summary.settlementPayer === 'husband') {
+        netUnsettledAmount -= summary.settlementAmount;
+      }
+    }
+
+    return {
+      yearMonth,
+      summary,
+      expenseCount,
+      isSettled,
+      settledAt: record?.settledAt,
+    };
+  });
+
+  const totalAmount = Math.round(Math.abs(netUnsettledAmount));
+  let settlementPayer: 'husband' | 'wife' | 'none' = 'none';
+  let settlementRecipient: 'husband' | 'wife' | 'none' = 'none';
+
+  if (netUnsettledAmount > 0) {
+    settlementPayer = 'wife';
+    settlementRecipient = 'husband';
+  } else if (netUnsettledAmount < 0) {
+    settlementPayer = 'husband';
+    settlementRecipient = 'wife';
+  }
+
+  return {
+    unsettledMonthsCount,
+    totalAmount,
+    settlementPayer,
+    settlementRecipient,
+    monthlyItems,
+  };
 };

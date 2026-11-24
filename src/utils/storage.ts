@@ -1,6 +1,7 @@
-import { Expense } from '../types/expense';
+import { Expense, SettlementMap } from '../types/expense';
 
 const STORAGE_KEY = 'couple_kakeibo_expenses_v2';
+const SETTLEMENTS_STORAGE_KEY = 'couple_kakeibo_settlements_v1';
 const GAS_URL_KEY = 'couple_kakeibo_gas_url_v1';
 
 /**
@@ -94,14 +95,43 @@ export const saveExpenses = (expenses: Expense[]): void => {
   }
 };
 
+/**
+ * LocalStorageから月別精算ステータスを読み込みます
+ */
+export const loadSettlements = (): SettlementMap => {
+  try {
+    const data = localStorage.getItem(SETTLEMENTS_STORAGE_KEY);
+    if (!data) return {};
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Failed to load settlements from localStorage:', error);
+    return {};
+  }
+};
+
+/**
+ * LocalStorageに月別精算ステータスを保存します
+ */
+export const saveSettlements = (settlements: SettlementMap): void => {
+  try {
+    localStorage.setItem(SETTLEMENTS_STORAGE_KEY, JSON.stringify(settlements));
+  } catch (error) {
+    console.error('Failed to save settlements to localStorage:', error);
+  }
+};
+
 export const resetToSampleExpenses = (): Expense[] => {
   const samples = getInitialSampleExpenses();
   saveExpenses(samples);
   return samples;
 };
 
-export const exportExpensesAsJSON = (expenses: Expense[]): void => {
-  const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(expenses, null, 2));
+export const exportExpensesAsJSON = (
+  expenses: Expense[],
+  settlements?: SettlementMap
+): void => {
+  const payload = settlements ? { expenses, settlements } : expenses;
+  const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
   const downloadAnchor = document.createElement('a');
   downloadAnchor.setAttribute('href', dataStr);
   downloadAnchor.setAttribute('download', `futuari-kakeibo-backup-${new Date().toISOString().substring(0, 10)}.json`);

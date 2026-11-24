@@ -1,17 +1,112 @@
 import React, { useState } from 'react';
-import { MonthlySummary } from '../types/expense';
+import { MonthlySummary, UnsettledTotalSummary } from '../types/expense';
 import { formatCurrency } from '../utils/formatters';
-import { ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp, CheckCircle2, Wallet } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Circle,
+  Wallet,
+  ChevronRight,
+  AlertCircle,
+} from 'lucide-react';
 
 interface SummaryCardsProps {
   summary: MonthlySummary;
+  isCurrentMonthSettled: boolean;
+  currentMonthSettledAt?: string;
+  onToggleCurrentMonthSettlement: () => void;
+  unsettledSummary: UnsettledTotalSummary;
+  onOpenSettlementTab: () => void;
 }
 
-export const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
+export const SummaryCards: React.FC<SummaryCardsProps> = ({
+  summary,
+  isCurrentMonthSettled,
+  currentMonthSettledAt,
+  onToggleCurrentMonthSettlement,
+  unsettledSummary,
+  onOpenSettlementTab,
+}) => {
   const [showDetails, setShowDetails] = useState(false);
+  const hasSettlement = summary.settlementAmount > 0;
 
   return (
     <div className="space-y-4">
+      {/* 0. 全期間の未精算トータル・クイックバナー */}
+      <button
+        onClick={onOpenSettlementTab}
+        className={`w-full rounded-2xl p-3.5 border shadow-xs flex items-center justify-between text-left active:scale-[0.98] transition-all ${
+          unsettledSummary.unsettledMonthsCount > 0
+            ? 'bg-amber-50/90 border-amber-200/80 hover:bg-amber-50'
+            : 'bg-emerald-50/80 border-emerald-200/70 hover:bg-emerald-50'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          {unsettledSummary.unsettledMonthsCount > 0 ? (
+            <div className="p-2 bg-amber-500/15 text-amber-600 rounded-xl flex-shrink-0">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+          ) : (
+            <div className="p-2 bg-emerald-500/15 text-emerald-600 rounded-xl flex-shrink-0">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold text-slate-500">
+              未精算トータル（全期間）
+              {unsettledSummary.unsettledMonthsCount > 0 && (
+                <span className="ml-1.5 text-amber-700 bg-amber-200/60 px-1.5 py-0.5 rounded-md text-[10px]">
+                  {unsettledSummary.unsettledMonthsCount}ヶ月分
+                </span>
+              )}
+            </div>
+            {unsettledSummary.totalAmount > 0 ? (
+              <div className="text-xs font-black text-navy-900 mt-0.5 truncate">
+                <span
+                  className={
+                    unsettledSummary.settlementPayer === 'wife'
+                      ? 'text-orange-600'
+                      : 'text-blue-600'
+                  }
+                >
+                  {unsettledSummary.settlementPayer === 'wife' ? 'ともこ' : 'しんた'}
+                </span>
+                {' → '}
+                <span
+                  className={
+                    unsettledSummary.settlementRecipient === 'husband'
+                      ? 'text-blue-600'
+                      : 'text-orange-600'
+                  }
+                >
+                  {unsettledSummary.settlementRecipient === 'husband' ? 'しんた' : 'ともこ'}
+                </span>
+                {' に '}
+                <span className="text-sm font-black text-amber-700">
+                  {formatCurrency(unsettledSummary.totalAmount)}
+                </span>
+              </div>
+            ) : unsettledSummary.unsettledMonthsCount > 0 ? (
+              <div className="text-xs font-extrabold text-amber-700 mt-0.5">
+                未精算の月同士が相殺され 0円
+              </div>
+            ) : (
+              <div className="text-xs font-extrabold text-emerald-700 mt-0.5">
+                未精算 0円（すべて精算済み）
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-0.5 text-[11px] font-bold text-slate-500 flex-shrink-0 ml-2">
+          <span>一覧</span>
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      </button>
+
       {/* 1. ダッシュボードカード */}
       <div className="relative overflow-hidden bg-gradient-to-b from-navy-900 via-slate-900 to-navy-800 text-white rounded-3xl p-6 shadow-xl border border-slate-700/40">
         <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
@@ -22,7 +117,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
             <div>
               <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase flex items-center gap-1.5">
                 <Wallet className="w-3.5 h-3.5 text-blue-400" />
-                今月の合計支出
+                この月の合計支出
               </span>
               <div className="text-4xl font-black text-white tracking-tight mt-1">
                 {formatCurrency(summary.totalAmount)}
@@ -36,37 +131,60 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
 
           {/* 精算額のインラインカード */}
           <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 backdrop-blur-sm shadow-inner">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {summary.settlementAmount > 0 ? (
-                  summary.settlementPayer === 'wife' ? (
-                    <div className="p-2.5 bg-orange-500/20 text-orange-400 rounded-xl">
-                      <ArrowUpRight className="w-5 h-5" />
-                    </div>
-                  ) : (
-                    <div className="p-2.5 bg-blue-500/20 text-blue-400 rounded-xl">
-                      <ArrowDownLeft className="w-5 h-5" />
-                    </div>
-                  )
-                ) : (
-                  <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                {!hasSettlement || isCurrentMonthSettled ? (
+                  <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl flex-shrink-0">
                     <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                ) : summary.settlementPayer === 'wife' ? (
+                  <div className="p-2.5 bg-orange-500/20 text-orange-400 rounded-xl flex-shrink-0">
+                    <ArrowUpRight className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-blue-500/20 text-blue-400 rounded-xl flex-shrink-0">
+                    <ArrowDownLeft className="w-5 h-5" />
                   </div>
                 )}
 
-                <div>
-                  <div className="text-[11px] font-medium text-slate-400">精算ステータス（自動計算）</div>
-                  {summary.settlementAmount > 0 ? (
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+                    <span>この月の精算（自動計算）</span>
+                    {hasSettlement && isCurrentMonthSettled && (
+                      <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-md">
+                        精算済み
+                      </span>
+                    )}
+                  </div>
+                  {hasSettlement ? (
                     <div className="text-sm font-bold text-slate-100 mt-0.5">
-                      <span className={summary.settlementPayer === 'wife' ? 'text-orange-400 font-extrabold' : 'text-blue-400 font-extrabold'}>
+                      <span
+                        className={
+                          summary.settlementPayer === 'wife'
+                            ? 'text-orange-400 font-extrabold'
+                            : 'text-blue-400 font-extrabold'
+                        }
+                      >
                         {summary.settlementPayer === 'wife' ? 'ともこ' : 'しんた'}
                       </span>
                       {' → '}
-                      <span className={summary.settlementRecipient === 'husband' ? 'text-blue-400 font-extrabold' : 'text-orange-400 font-extrabold'}>
+                      <span
+                        className={
+                          summary.settlementRecipient === 'husband'
+                            ? 'text-blue-400 font-extrabold'
+                            : 'text-orange-400 font-extrabold'
+                        }
+                      >
                         {summary.settlementRecipient === 'husband' ? 'しんた' : 'ともこ'}
                       </span>
                       {' に '}
-                      <span className="text-amber-300 font-black text-base">
+                      <span
+                        className={`font-black text-base ${
+                          isCurrentMonthSettled
+                            ? 'text-slate-400 line-through'
+                            : 'text-amber-300'
+                        }`}
+                      >
                         {formatCurrency(summary.settlementAmount)}
                       </span>
                     </div>
@@ -78,6 +196,39 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({ summary }) => {
                 </div>
               </div>
             </div>
+
+            {/* この月の精算フラグ切り替えボタン */}
+            {hasSettlement && (
+              <div className="mt-3 pt-3 border-t border-slate-700/60 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-400 font-medium">
+                  {isCurrentMonthSettled
+                    ? currentMonthSettledAt
+                      ? `${currentMonthSettledAt} に精算完了`
+                      : '精算完了として記録済み'
+                    : '精算が終わったらチェック'}
+                </span>
+                <button
+                  onClick={onToggleCurrentMonthSettlement}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 active:scale-95 transition-all ${
+                    isCurrentMonthSettled
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30'
+                      : 'bg-amber-400 text-navy-950 hover:bg-amber-300 shadow-sm'
+                  }`}
+                >
+                  {isCurrentMonthSettled ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>精算済み</span>
+                    </>
+                  ) : (
+                    <>
+                      <Circle className="w-3.5 h-3.5" />
+                      <span>精算済みにする</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* 内訳展開 */}
             <button
